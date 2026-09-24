@@ -4,6 +4,7 @@ import type {
   KeyboardEventHandler,
   DragEventHandler,
   FormEventHandler,
+  MouseEvent as ReactMouseEvent,
   MutableRefObject,
   ReactNode,
 } from "react";
@@ -331,6 +332,32 @@ export function ChatPromptEditor({
       ? dragAttachmentHint
       : undefined;
 
+  // 可聚焦面只有 ContentEditable 本体；壳的 p-3 padding、gap 和工具栏空白区都是纯展示 div，
+  // 点击会落在壳上被吞掉，用户必须精确点中输入框。这里把壳内非控件区域的按下转发为聚焦。
+  const handleShellMouseDown = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      const target = event.target as HTMLElement | null;
+      if (!target || target.isContentEditable) return;
+      // 控件与弹出层维持原生行为，不抢焦点。
+      if (
+        target.closest(
+          "button, a, input, textarea, select, [role='button'], [role='menu'], [role='menuitem'], [data-composer-no-focus]",
+        )
+      ) {
+        return;
+      }
+      // 阻止按下时把焦点交给 body，再统一聚焦到编辑器（与草稿回填同款下一帧时序）。
+      event.preventDefault();
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(() => resolvedInputApiRef.current?.focus());
+      } else {
+        resolvedInputApiRef.current?.focus();
+      }
+    },
+    [resolvedInputApiRef],
+  );
+
   return (
     <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} className={cn("relative", className)}>
       {triggerPanelContainer ? null : (
@@ -343,6 +370,7 @@ export function ChatPromptEditor({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
+        onMouseDown={handleShellMouseDown}
         className={cn(
           "relative flex flex-col gap-3 overflow-hidden rounded-2xl border border-input-border bg-input p-3 transition-colors hover:border-input-border-hover focus-within:!border-input-border-focused focus-within:bg-input-focused",
           (isWorkspaceFileDropActive || isExternalFileDropActive) &&

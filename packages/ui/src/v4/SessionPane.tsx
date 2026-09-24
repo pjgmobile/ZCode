@@ -13,6 +13,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import { Hand } from "lucide-react";
@@ -116,6 +117,7 @@ import type { GroupedDraftTaskState } from "@/store/zcodeSessionStoreTypes.js";
 import {
   ConversationComposer,
   type ComposerRestoreRequest,
+  type ConversationComposerFocusHandle,
   type ConversationComposerSendOptions,
   type ConversationComposerSendResult,
 } from "@/v4/ConversationComposer.js";
@@ -4361,6 +4363,26 @@ export function SessionPane({
       });
   }, [dispatchCommand, handleDraftSessionCreated, recoverableCommand, workspaceKey]);
 
+  // 点击 pane 内任意非交互区域（含上方时间线输出）都把光标交还输入框。
+  // 交互元素（按钮/链接/表单控件）维持原生行为；composer form 区域由
+  // ChatPromptEditor 壳层自己的 mousedown 聚焦逻辑负责，这里跳过避免双重聚焦；
+  // 拖选/双击选词时 selection 非折叠，跳过以保住复制体验。
+  const composerFocusHandleRef = useRef<ConversationComposerFocusHandle | null>(null);
+  const handlePaneClickFocusComposer = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null;
+    if (!target || target.isContentEditable) return;
+    if (
+      target.closest(
+        "button, a, input, textarea, select, label, form, [role='button'], [role='menu'], [role='menuitem'], [role='tab'], [role='option'], [data-no-composer-focus]",
+      )
+    ) {
+      return;
+    }
+    const selection = typeof window.getSelection === "function" ? window.getSelection() : null;
+    if (selection && !selection.isCollapsed) return;
+    composerFocusHandleRef.current?.focus();
+  }, []);
+
   // subagent 右侧 child tab 是观察视图；复用普通 SessionPane 时
   // 若仍创建 composer，会让用户误以为可以直接向 child session 继续输入。
   const composerNode = readOnly ? null : (
@@ -4386,6 +4408,7 @@ export function SessionPane({
       externalTextInsertRequest={focused && sessionId === null ? composerTextInsertRequest : null}
       onExternalTextInsertApplied={handleExternalTextInsertApplied}
       autoFocusEnabled={focused}
+      focusHandleRef={composerFocusHandleRef}
       disabled={
         connecting ||
         draftRuntimeRebuilding ||
@@ -4594,6 +4617,7 @@ export function SessionPane({
       onDragOver={effectiveDropTargetController?.onDragOver}
       onDragLeave={effectiveDropTargetController?.onDragLeave}
       onDrop={effectiveDropTargetController?.onDrop}
+      onClick={handlePaneClickFocusComposer}
       className="relative flex h-full min-h-0 flex-col"
     >
       {effectiveDropTargetController?.active ? (

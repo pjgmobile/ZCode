@@ -24,6 +24,7 @@ import {
   useState,
   type DragEvent,
   type MouseEvent as ReactMouseEvent,
+  type MutableRefObject,
   type ReactNode,
 } from "react";
 import { cn } from "@/components/lib/utils.js";
@@ -190,6 +191,12 @@ export interface ConversationComposerSendOptions {
 }
 
 export type ConversationComposerSendResult = "sent" | "blocked" | "confirmationRequired";
+
+/** 宿主（SessionPane）经 ref 句柄请求聚焦输入框的最小 API。 */
+export type ConversationComposerFocusHandle = {
+  focus: () => void;
+};
+
 function getComposerAttachmentTypeLabel(filename: string, mimeType: string): string {
   const leaf = filename.split(/[\\/]/u).at(-1) ?? filename;
   const dotIndex = leaf.lastIndexOf(".");
@@ -391,6 +398,11 @@ interface ConversationComposerProps {
    * 竖切多 pane 时由宿主传入 SessionPane.focused，仅焦点 pane 聚焦、后台 pane 不抢焦点。
    */
   autoFocusEnabled?: boolean;
+  /**
+   * 宿主经 ref 句柄主动请求聚焦输入框（如「点击 pane 空白处聚焦」）。
+   * 复用 requestComposerFocus 的 autoFocus 三态门控，不旁路后台 pane / disabled 约束。
+   */
+  focusHandleRef?: MutableRefObject<ConversationComposerFocusHandle | null>;
   /** 当前 composer 是否运行在手机 Web 远控壳中。 */
   workspacePath: string;
   workspaceIdentity?: string;
@@ -498,6 +510,7 @@ function ConversationComposerImpl({
   blockingRequestId = null,
   disabled = false,
   autoFocusEnabled = true,
+  focusHandleRef,
   workspacePath,
   workspaceIdentity,
   remoteSessionId,
@@ -851,6 +864,15 @@ function ConversationComposerImpl({
     pendingFocusRef.current = true;
     flushPendingFocus();
   }, [flushPendingFocus]);
+
+  // 把聚焦句柄交给宿主：SessionPane 的「点击 pane 空白处聚焦输入框」也走同一策略门控。
+  useEffect(() => {
+    if (!focusHandleRef) return;
+    focusHandleRef.current = { focus: requestComposerFocus };
+    return () => {
+      focusHandleRef.current = null;
+    };
+  }, [focusHandleRef, requestComposerFocus]);
 
   const handleCodeCommentRemoved = useCallback(
     (comment: Parameters<typeof removeCodeCommentPreview>[0]) => {
